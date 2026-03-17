@@ -10,8 +10,9 @@ A server-side mod for [ECO](https://play.eco) that helps new and returning playe
 When a player joins the server for the **very first time**, they automatically receive a configurable number of usable stars. This lets newcomers immediately start specializing without waiting for their first XP thresholds.
 
 ### 2. Catch-Up XP
-When a player who was marked as **abandoned** logs back in, the mod compares their total lifetime XP against the average of all currently active (non-abandoned) players. If they're below the average, they receive exactly enough XP to match it — including any stars that XP naturally unlocks.
+When a player who was marked as **abandoned** logs back in, the mod compares their total lifetime XP against the average of all currently active (non-abandoned) players. If they're sufficiently behind, they receive exactly enough XP to match the average — including any stars that XP naturally unlocks.
 
+- Catch-up only fires if the player's XP gap is at least **30%** of the server average (configurable). Players who are close to the average are not boosted.
 - The number of times a player can receive automatic catch-up is configurable (default: 1, or unlimited).
 - New players on a server with existing active players also receive catch-up XP alongside their welcome stars.
 
@@ -58,12 +59,16 @@ WelcomeStarCount=1
 
 # Max automatic head-start catch-ups per player (default: 1, 0 = unlimited)
 MaxHeadStartGrants=1
+
+# Minimum XP gap as a % of the server average before catch-up fires (default: 30, range: 0-100)
+MinCatchUpGapPercent=30
 ```
 
 | Setting | Default | Description |
 |---|---|---|
 | `WelcomeStarCount` | `1` | Number of stars granted to a player on their first-ever join. Set to `0` to disable welcome stars. |
 | `MaxHeadStartGrants` | `1` | Maximum number of times a player can receive automatic catch-up XP. Each return from abandoned status uses one grant. Set to `0` for unlimited. |
+| `MinCatchUpGapPercent` | `30` | Minimum XP gap (as a % of the server average) required before catch-up is granted. A player must be at least this percentage below the average to qualify. Set to `0` to always boost anyone behind the average. Clamped to 0–100. |
 
 Changes to the config file require a server restart to take effect.
 
@@ -86,8 +91,9 @@ using ECO's star XP thresholds (25, 100, 250, 500, 1000, 2000, 4000, then +2000 
 1. Player logs in.
 2. Mod checks if the player was **abandoned** at the moment of login (the flag is captured before ECO clears it).
 3. Computes the **average total XP** of all active, non-abandoned players.
-4. If the returning player is below average and has remaining grant uses, they receive `averageXP - theirXP` as experience.
-5. `AddExperience()` automatically unlocks any star thresholds crossed — no manual star grants needed.
+4. Checks whether the player's gap vs the average meets the minimum threshold: `(average - playerXP) / average ≥ MinCatchUpGapPercent%`. If the gap is too small, the check is skipped and no grant use is consumed.
+5. If the returning player qualifies and has remaining grant uses, they receive `averageXP - theirXP` as experience.
+6. `AddExperience()` automatically unlocks any star thresholds crossed — no manual star grants needed.
 
 ### Race Condition Handling
 
