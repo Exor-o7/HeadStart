@@ -16,9 +16,10 @@
 //   • /catchup  <playerName>           — Admin forces catch-up for any player.
 //
 // CONFIG — Storage/Mods/HeadStart/config.txt
-//   WelcomeStarCount   : stars granted to first-time joiners  (default: 1)
+//   WelcomeStarCount    : stars granted to first-time joiners  (default: 1)
 //   MaxHeadStartGrants  : max automatic catch-ups per player   (default: 1)
 //                         Set to 0 for unlimited.
+//   MinCatchUpGapPercent: min XP gap % vs average to trigger catch-up (default: 30)
 //
 // PERSISTENCE — Per-player folders under Storage/Mods/HeadStart/Players/<Name>/
 //   Each player gets a subfolder with marker files (welcome.granted, headstart.count)
@@ -52,6 +53,13 @@ namespace Eco.Mods.HeadStart
         /// Set to 0 for unlimited. Default: 1.
         /// </summary>
         public int MaxHeadStartGrants { get; set; } = 1;
+
+        /// <summary>
+        /// Minimum XP gap (as a percentage of the active-player average) required
+        /// before catch-up is granted.  A player must be at least this far below
+        /// the average to qualify. Range: 0–100. Default: 30.
+        /// </summary>
+        public int MinCatchUpGapPercent { get; set; } = 30;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -127,7 +135,7 @@ namespace Eco.Mods.HeadStart
             // Feature 2: head-start XP runs on every login for abandoned players.
             UserManager.OnUserLoggedIn.Add(OnUserLoggedIn);
 
-            LogMessage($"Plugin initialized. Config: WelcomeStarCount={_config.WelcomeStarCount}, MaxHeadStartGrants={_config.MaxHeadStartGrants}");
+            LogMessage($"Plugin initialized. Config: WelcomeStarCount={_config.WelcomeStarCount}, MaxHeadStartGrants={_config.MaxHeadStartGrants}, MinCatchUpGapPercent={_config.MinCatchUpGapPercent}");
         }
 
         public Task ShutdownAsync()
@@ -164,6 +172,9 @@ namespace Eco.Mods.HeadStart
                         else if (key.Equals("MaxHeadStartGrants", StringComparison.OrdinalIgnoreCase)
                             && int.TryParse(value, out int mhsg))
                             _config.MaxHeadStartGrants = mhsg;
+                        else if (key.Equals("MinCatchUpGapPercent", StringComparison.OrdinalIgnoreCase)
+                            && int.TryParse(value, out int mcgp))
+                            _config.MinCatchUpGapPercent = Math.Clamp(mcgp, 0, 100);
                     }
                 }
                 else
@@ -192,7 +203,10 @@ namespace Eco.Mods.HeadStart
                     $"WelcomeStarCount={_config.WelcomeStarCount}{Environment.NewLine}" +
                     $"{Environment.NewLine}" +
                     $"# Max automatic head-start catch-ups per player (default: 1, 0 = unlimited){Environment.NewLine}" +
-                    $"MaxHeadStartGrants={_config.MaxHeadStartGrants}{Environment.NewLine}");
+                    $"MaxHeadStartGrants={_config.MaxHeadStartGrants}{Environment.NewLine}" +
+                    $"{Environment.NewLine}" +
+                    $"# Minimum XP gap as a % of the server average before catch-up fires (default: 30, range: 0-100){Environment.NewLine}" +
+                    $"MinCatchUpGapPercent={_config.MinCatchUpGapPercent}{Environment.NewLine}");
             }
             catch (Exception ex)
             {
@@ -518,6 +532,22 @@ namespace Eco.Mods.HeadStart
                 }
                 LogMessage($"{user.Name} already at/above average total XP ({currentTotalXP:F0} >= {averageTotalXP:F0}).");
                 return;
+            }
+
+            // Check whether the gap is large enough to warrant intervention.
+            if (averageTotalXP > 0f)
+            {
+                float gapPercent = (averageTotalXP - currentTotalXP) / averageTotalXP * 100f;
+                if (gapPercent < _config.MinCatchUpGapPercent)
+                {
+                    lock (_lock)
+                    {
+                        if (currentCount == 0) _headStartGrantCount.Remove(userId);
+                        else _headStartGrantCount[userId] = currentCount;
+                    }
+                    LogMessage($"{user.Name} gap too small ({gapPercent:F1}% < {_config.MinCatchUpGapPercent}%) — skipping head-start.");
+                    return;
+                }
             }
 
             // Grant exactly enough XP to reach the active-player average total XP.
