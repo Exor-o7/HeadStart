@@ -1,4 +1,4 @@
-# HeadStart — ECO Server Mod
+# HeadStart — ECO Server Mod `v1.1.0`
 
 A server-side mod for [ECO](https://play.eco) that helps new and returning players catch up to an active server. It grants **welcome stars** on first join and **catch-up XP** when abandoned players return, bringing them up to the server's active-player average.
 
